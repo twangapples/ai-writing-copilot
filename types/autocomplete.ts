@@ -3,6 +3,8 @@ export interface AutocompleteContext {
   precedingParagraphs: string
   documentSummary: string
   planText: string
+  styleExamples: string
+  styleText: string
 }
 
 export interface LevelConfig {

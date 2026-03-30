@@ -31,6 +31,7 @@ export class GhostTextNode extends DecoratorNode<React.ReactElement> {
   createDOM(): HTMLElement {
     const span = document.createElement('span')
     span.setAttribute('data-ghost-text', 'true')
+    span.contentEditable = 'false'
     return span
   }
 

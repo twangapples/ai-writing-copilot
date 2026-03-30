@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { getLevelConfig } from '@/lib/autocomplete/levelConfig'
-import { buildPrompt, buildSummarizePrompt } from '@/lib/autocomplete/buildPrompt'
+import { buildPrompt, buildSummarizePrompt, buildPlanSummarizePrompt, buildStyleSummarizePrompt } from '@/lib/autocomplete/buildPrompt'
 import type { AutocompleteContext } from '@/types/autocomplete'
 
 export const runtime = 'edge'
@@ -9,12 +9,36 @@ export async function POST(req: Request) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const body = await req.json()
 
-  // Summarize mode: returns JSON
+  // Summarize document body: returns JSON
   if (body.mode === 'summarize') {
     const messages = buildSummarizePrompt(body.text)
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 80,
+      messages,
+    })
+    const summary = completion.choices[0]?.message?.content ?? ''
+    return Response.json({ summary })
+  }
+
+  // Summarize writing style instructions: distills long instructions into concise bullets
+  if (body.mode === 'summarize-style') {
+    const messages = buildStyleSummarizePrompt(body.text)
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 120,
+      messages,
+    })
+    const summary = completion.choices[0]?.message?.content ?? ''
+    return Response.json({ summary })
+  }
+
+  // Summarize plan: distills long user plan into concise bullets
+  if (body.mode === 'summarize-plan') {
+    const messages = buildPlanSummarizePrompt(body.text)
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 120,
       messages,
     })
     const summary = completion.choices[0]?.message?.content ?? ''

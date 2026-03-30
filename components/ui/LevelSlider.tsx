@@ -12,7 +12,12 @@ export function LevelSlider({ level, onChange }: LevelSliderProps) {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-gray-500 whitespace-nowrap">Word</span>
+      <button
+        onClick={() => onChange(Math.max(1, level - 1))}
+        className="text-xs text-gray-500 whitespace-nowrap hover:text-blue-500 transition-colors cursor-pointer"
+      >
+        Word
+      </button>
       <input
         type="range"
         min={1}
@@ -22,8 +27,13 @@ export function LevelSlider({ level, onChange }: LevelSliderProps) {
         className="w-32 accent-blue-500"
         aria-label="Autocomplete level"
       />
-      <span className="text-xs text-gray-500 whitespace-nowrap">Multi-paragraph</span>
-      <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded whitespace-nowrap">
+      <button
+        onClick={() => onChange(Math.min(10, level + 1))}
+        className="text-xs text-gray-500 whitespace-nowrap hover:text-blue-500 transition-colors cursor-pointer"
+      >
+        Paragraph
+      </button>
+      <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded whitespace-nowrap text-center" style={{ minWidth: '7rem' }}>
         {config.label}
       </span>
     </div>

@@ -6,6 +6,7 @@ import {
   $getRoot,
   $getSelection,
   $isRangeSelection,
+  $isTextNode,
   $getNodeByKey,
   $insertNodes,
 } from 'lexical'
@@ -21,6 +22,7 @@ interface AutocompletePluginProps {
   level: number
   documentSummaryRef: React.RefObject<string>
   planRef: React.RefObject<string>
+  writingStyleRef: React.RefObject<string>
   ghostKeyRef: React.RefObject<string | null>
   suggestionRef: React.RefObject<string>
   onStatusChange: (status: SuggestionStatus) => void
@@ -30,6 +32,7 @@ function extractContext(
   editorState: EditorState,
   summaryRef: React.RefObject<string>,
   planRef: React.RefObject<string>,
+  writingStyleRef: React.RefObject<string>,
 ): AutocompleteContext | null {
   return editorState.read(() => {
     const root = $getRoot()
@@ -62,11 +65,34 @@ function extractContext(
       .filter(Boolean)
       .join('\n\n')
 
+    // Extract style examples from paragraphs NOT already in precedingParagraphs
+    const otherParagraphs = [
+      ...children.slice(0, startIndex),
+      ...children.slice(cursorParagraphIndex + 1),
+    ]
+    const sentenceCandidates = otherParagraphs
+      .map((n) => n.getTextContent())
+      .filter(Boolean)
+      .flatMap((p) => p.match(/[^.!?]+[.!?]+/g) ?? [])
+      .map((s) => s.trim())
+      .filter((s) => {
+        const words = s.split(/\s+/).length
+        return words >= 8 && words <= 25
+      })
+    const pickSpread = (arr: string[], n: number): string[] => {
+      if (arr.length <= n) return arr
+      const step = Math.floor(arr.length / n)
+      return Array.from({ length: n }, (_, i) => arr[i * step])
+    }
+    const styleExamples = pickSpread(sentenceCandidates, 3).join('\n')
+
     return {
       currentSentence,
       precedingParagraphs,
       documentSummary: summaryRef.current,
       planText: planRef.current,
+      styleExamples,
+      styleText: writingStyleRef.current,
     }
   })
 }
@@ -88,6 +114,7 @@ export function AutocompletePlugin({
   level,
   documentSummaryRef,
   planRef,
+  writingStyleRef,
   ghostKeyRef,
   suggestionRef,
   onStatusChange,
@@ -156,6 +183,15 @@ export function AutocompletePlugin({
                 if (!$isRangeSelection(selection)) return
                 const ghostNode = $createGhostTextNode(accumulated)
                 $insertNodes([ghostNode])
+                // $insertNodes advances the selection past the inserted node.
+                // Restore the cursor to before the ghost text so keystrokes
+                // continue at the original position, not after the suggestion.
+                const prevSibling = ghostNode.getPreviousSibling()
+                if (prevSibling !== null && $isTextNode(prevSibling)) {
+                  prevSibling.selectEnd()
+                } else {
+                  ghostNode.getParentOrThrow().selectStart()
+                }
                 ghostKeyRef.current = ghostNode.getKey()
                 suggestionRef.current = accumulated
               },
@@ -201,7 +237,7 @@ export function AutocompletePlugin({
       if (dirtyLeaves.size === 0 && dirtyElements.size === 0) return
 
       const editorState = editor.getEditorState()
-      const newContext = extractContext(editorState, documentSummaryRef, planRef)
+      const newContext = extractContext(editorState, documentSummaryRef, planRef, writingStyleRef)
 
       // ── Prefix matching ──────────────────────────────────────────────────
       // If the user typed a character that matches the start of the current
@@ -266,7 +302,7 @@ export function AutocompletePlugin({
         triggerAutocomplete(newContext, capturedVersion)
       }, DEBOUNCE_MS)
     })
-  }, [editor, ghostKeyRef, suggestionRef, documentSummaryRef, planRef, onStatusChange, triggerAutocomplete])
+  }, [editor, ghostKeyRef, suggestionRef, documentSummaryRef, planRef, writingStyleRef, onStatusChange, triggerAutocomplete])
 
   return null
 }

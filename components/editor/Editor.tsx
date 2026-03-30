@@ -18,6 +18,7 @@ interface EditorProps {
   level: number
   documentSummaryRef: React.RefObject<string>
   planRef: React.RefObject<string>
+  writingStyleRef: React.RefObject<string>
   onStatusChange: (status: SuggestionStatus) => void
 }
 
@@ -30,7 +31,7 @@ const initialConfig = {
   },
 }
 
-export default function Editor({ level, documentSummaryRef, planRef, onStatusChange }: EditorProps) {
+export default function Editor({ level, documentSummaryRef, planRef, writingStyleRef, onStatusChange }: EditorProps) {
   const ghostKeyRef = useRef<string | null>(null)
   const suggestionRef = useRef<string>('')
 
@@ -71,6 +72,7 @@ export default function Editor({ level, documentSummaryRef, planRef, onStatusCha
           level={level}
           documentSummaryRef={documentSummaryRef}
           planRef={planRef}
+          writingStyleRef={writingStyleRef}
           ghostKeyRef={ghostKeyRef}
           suggestionRef={suggestionRef}
           onStatusChange={onStatusChange}
