@@ -1,42 +1,66 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { LevelSlider } from './ui/LevelSlider'
 import { StatusBar } from './ui/StatusBar'
 import { DocumentPlan } from './ui/DocumentPlan'
 import { WritingStyle } from './ui/WritingStyle'
+import { DocTitle } from './ui/DocTitle'
+import { SaveIndicator, type SaveStatus } from './ui/SaveIndicator'
 import Editor from './editor/Editor'
+import { createClient } from '@/lib/supabase/client'
+import { updateDocument } from '@/lib/documents/queries'
+import type { Document } from '@/lib/documents/queries'
+import type { LexicalEditor } from 'lexical'
 import type { SuggestionStatus } from '@/types/autocomplete'
 
 const PLAN_SUMMARIZE_THRESHOLD = 300
 const PLAN_DEBOUNCE_MS = 1500
 const STYLE_SUMMARIZE_THRESHOLD = 300
 const STYLE_DEBOUNCE_MS = 1500
+const AUTOSAVE_INTERVAL_MS = 10_000
 
-export default function WritingApp() {
-  const [level, setLevel] = useState(5)
+interface WritingAppProps {
+  initialDoc: Document
+}
+
+export default function WritingApp({ initialDoc }: WritingAppProps) {
+  const [level, setLevel] = useState(initialDoc.level)
   const [status, setStatus] = useState<SuggestionStatus>('idle')
-  const [plan, setPlan] = useState('')
+  const [plan, setPlan] = useState(initialDoc.plan)
   const [isSummarizingPlan, setIsSummarizingPlan] = useState(false)
-  const [writingStyle, setWritingStyle] = useState('')
+  const [writingStyle, setWritingStyle] = useState(initialDoc.writing_style)
   const [isSummarizingStyle, setIsSummarizingStyle] = useState(false)
+  const [title, setTitle] = useState(initialDoc.title)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
 
   const documentSummaryRef = useRef<string>('')
-  const planRef = useRef<string>('')
+  const planRef = useRef<string>(initialDoc.plan)
   const planDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const writingStyleRef = useRef<string>('')
+  const writingStyleRef = useRef<string>(initialDoc.writing_style)
   const styleDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const editorRef = useRef<LexicalEditor | null>(null)
 
+  // Stable refs for auto-save closure
+  const titleRef = useRef(title)
+  const planStateRef = useRef(plan)
+  const writingStyleStateRef = useRef(writingStyle)
+  const levelRef = useRef(level)
+
+  useEffect(() => { titleRef.current = title }, [title])
+  useEffect(() => { planStateRef.current = plan }, [plan])
+  useEffect(() => { writingStyleStateRef.current = writingStyle }, [writingStyle])
+  useEffect(() => { levelRef.current = level }, [level])
+
+  // Plan summarization
   useEffect(() => {
     if (plan.length <= PLAN_SUMMARIZE_THRESHOLD) {
-      // Short plan: pass through directly, no API call
       planRef.current = plan
       setIsSummarizingPlan(false)
       if (planDebounceRef.current) clearTimeout(planDebounceRef.current)
       return
     }
-
-    // Long plan: debounce then summarize
     if (planDebounceRef.current) clearTimeout(planDebounceRef.current)
     planDebounceRef.current = setTimeout(async () => {
       setIsSummarizingPlan(true)
@@ -56,6 +80,7 @@ export default function WritingApp() {
     }, PLAN_DEBOUNCE_MS)
   }, [plan])
 
+  // Writing style summarization
   useEffect(() => {
     if (writingStyle.length <= STYLE_SUMMARIZE_THRESHOLD) {
       writingStyleRef.current = writingStyle
@@ -63,7 +88,6 @@ export default function WritingApp() {
       if (styleDebounceRef.current) clearTimeout(styleDebounceRef.current)
       return
     }
-
     if (styleDebounceRef.current) clearTimeout(styleDebounceRef.current)
     styleDebounceRef.current = setTimeout(async () => {
       setIsSummarizingStyle(true)
@@ -83,12 +107,56 @@ export default function WritingApp() {
     }, STYLE_DEBOUNCE_MS)
   }, [writingStyle])
 
+  // Auto-save every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const editorState = editorRef.current?.getEditorState()
+      const content = editorState ? editorState.toJSON() : null
+      setSaveStatus('saving')
+      try {
+        const supabase = createClient()
+        await updateDocument(supabase, initialDoc.id, {
+          title: titleRef.current,
+          content,
+          plan: planStateRef.current,
+          writing_style: writingStyleStateRef.current,
+          level: levelRef.current,
+        })
+        setSaveStatus('saved')
+      } catch {
+        setSaveStatus('error')
+      }
+    }, AUTOSAVE_INTERVAL_MS)
+
+    return () => clearInterval(interval)
+  }, [initialDoc.id])
+
+  const handleEditorReady = useCallback((editor: LexicalEditor) => {
+    editorRef.current = editor
+  }, [])
+
+  const initialEditorState = initialDoc.content
+    ? JSON.stringify(initialDoc.content)
+    : null
+
   return (
     <div className="min-h-screen bg-white">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-700">AI Writing Copilot</span>
-          <LevelSlider level={level} onChange={setLevel} />
+        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center gap-4">
+          <Link
+            href="/"
+            className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            aria-label="Back to documents"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <DocTitle value={title} onChange={setTitle} />
+          <div className="flex items-center gap-3 ml-auto">
+            <SaveIndicator status={saveStatus} />
+            <LevelSlider level={level} onChange={setLevel} />
+          </div>
         </div>
       </header>
 
@@ -104,6 +172,8 @@ export default function WritingApp() {
             documentSummaryRef={documentSummaryRef}
             planRef={planRef}
             writingStyleRef={writingStyleRef}
+            initialEditorState={initialEditorState}
+            onEditorReady={handleEditorReady}
             onStatusChange={setStatus}
           />
         </div>
