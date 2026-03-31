@@ -1,11 +1,54 @@
 import OpenAI from 'openai'
 import { getLevelConfig } from '@/lib/autocomplete/levelConfig'
 import { buildPrompt, buildSummarizePrompt, buildPlanSummarizePrompt, buildStyleSummarizePrompt } from '@/lib/autocomplete/buildPrompt'
+import { createClient } from '@/lib/supabase/server'
 import type { AutocompleteContext } from '@/types/autocomplete'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
+
+const DAILY_LIMIT = 200
+const MAX_LEVEL = 7
+
+async function checkAndIncrementUsage(userId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+
+  const { data, error } = await supabase
+    .from('usage')
+    .select('count')
+    .eq('user_id', userId)
+    .eq('date', today)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    // PGRST116 = row not found, which is fine
+    return false
+  }
+
+  const currentCount = data?.count ?? 0
+  if (currentCount >= DAILY_LIMIT) return false
+
+  await supabase
+    .from('usage')
+    .upsert({ user_id: userId, date: today, count: currentCount + 1 })
+
+  return true
+}
 
 export async function POST(req: Request) {
+  // Auth check
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
+  // Rate limit check
+  const allowed = await checkAndIncrementUsage(user.id)
+  if (!allowed) {
+    return Response.json({ error: 'daily_limit_reached' }, { status: 429 })
+  }
+
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const body = await req.json()
 
@@ -21,7 +64,7 @@ export async function POST(req: Request) {
     return Response.json({ summary })
   }
 
-  // Summarize writing style instructions: distills long instructions into concise bullets
+  // Summarize writing style instructions
   if (body.mode === 'summarize-style') {
     const messages = buildStyleSummarizePrompt(body.text)
     const completion = await openai.chat.completions.create({
@@ -33,7 +76,7 @@ export async function POST(req: Request) {
     return Response.json({ summary })
   }
 
-  // Summarize plan: distills long user plan into concise bullets
+  // Summarize plan
   if (body.mode === 'summarize-plan') {
     const messages = buildPlanSummarizePrompt(body.text)
     const completion = await openai.chat.completions.create({
@@ -47,7 +90,8 @@ export async function POST(req: Request) {
 
   // Autocomplete mode: streams plain text
   const { context, level } = body as { context: AutocompleteContext; level: number }
-  const { maxTokens, stopSequences } = getLevelConfig(level)
+  const cappedLevel = Math.min(level, MAX_LEVEL)
+  const { maxTokens, stopSequences } = getLevelConfig(cappedLevel)
   const messages = buildPrompt(context)
 
   const stream = await openai.chat.completions.create({

@@ -13,4 +13,4 @@ export interface LevelConfig {
   label: string
 }
 
-export type SuggestionStatus = 'idle' | 'loading' | 'ready'
+export type SuggestionStatus = 'idle' | 'loading' | 'ready' | 'limit'

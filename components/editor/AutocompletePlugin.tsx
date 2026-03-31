@@ -148,6 +148,11 @@ export function AutocompletePlugin({
           signal: controller.signal,
         })
 
+        if (res.status === 429) {
+          onStatusChange('limit')
+          return
+        }
+
         if (!res.ok || !res.body) {
           onStatusChange('idle')
           return

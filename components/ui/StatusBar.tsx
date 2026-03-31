@@ -20,6 +20,11 @@ export function StatusBar({ status }: StatusBarProps) {
           Press <kbd className="px-1 py-0.5 rounded bg-gray-100 border border-gray-300 text-gray-600 font-mono text-[10px]">Tab</kbd> to accept
         </span>
       )}
+      {status === 'limit' && (
+        <span className="text-xs text-amber-500">
+          Daily limit reached — come back tomorrow
+        </span>
+      )}
     </div>
   )
 }
